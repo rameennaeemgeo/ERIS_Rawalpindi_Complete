@@ -1,0 +1,9 @@
+{
+ "hospitals": 78,
+ "fire_stations": 8,
+ "road_nodes_analysed": 44929,
+ "mean_hosp_min": 3.8,
+ "mean_fire_min": 5.1,
+ "hosp_within_10": 97.2,
+ "fire_within_10": 98.2
+}

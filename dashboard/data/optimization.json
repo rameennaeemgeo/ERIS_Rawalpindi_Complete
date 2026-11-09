@@ -1,0 +1,10 @@
+{
+ "Hospital": {
+  "coverage_before_pct": 71.4,
+  "coverage_after_pct": 92.2
+ },
+ "Fire station": {
+  "coverage_before_pct": 48.0,
+  "coverage_after_pct": 71.5
+ }
+}

@@ -1,0 +1,8 @@
+osmnx>=1.9
+networkx>=3.2
+geopandas>=1.0
+pandas
+numpy
+scikit-learn
+xgboost
+rasterio>=1.4

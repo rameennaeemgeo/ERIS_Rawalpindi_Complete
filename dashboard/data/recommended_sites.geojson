@@ -1,0 +1,13 @@
+{
+"type": "FeatureCollection",
+"name": "recommended_sites",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "type": "Hospital", "rank": 1, "gain_pct": 11.2 }, "geometry": { "type": "Point", "coordinates": [ 73.0124839, 33.547687 ] } },
+{ "type": "Feature", "properties": { "type": "Hospital", "rank": 2, "gain_pct": 6.1 }, "geometry": { "type": "Point", "coordinates": [ 72.975713, 33.5728191 ] } },
+{ "type": "Feature", "properties": { "type": "Hospital", "rank": 3, "gain_pct": 3.6 }, "geometry": { "type": "Point", "coordinates": [ 73.0521238, 33.5430203 ] } },
+{ "type": "Feature", "properties": { "type": "Fire station", "rank": 1, "gain_pct": 8.6 }, "geometry": { "type": "Point", "coordinates": [ 73.0124839, 33.547687 ] } },
+{ "type": "Feature", "properties": { "type": "Fire station", "rank": 2, "gain_pct": 7.9 }, "geometry": { "type": "Point", "coordinates": [ 72.9869145, 33.589462 ] } },
+{ "type": "Feature", "properties": { "type": "Fire station", "rank": 3, "gain_pct": 7.0 }, "geometry": { "type": "Point", "coordinates": [ 73.0704274, 33.5481173 ] } }
+]
+}
