@@ -1,148 +1,206 @@
-# ERIS v2 - Rawalpindi Emergency Response Intelligence System
+# ERIS: Rawalpindi Emergency Response Intelligence System
 
-Dashboard URL: http://localhost:8000
+**A GIS-based emergency access analysis and decision-support dashboard for hospitals and fire stations in Rawalpindi, Pakistan.**
 
-    python run_all.py     # phases 1-6, including the road-map layer
-    python server.py      # start the dashboard only if it is not already running
+ERIS uses OpenStreetMap road data to estimate how quickly emergency facilities can be reached, shows where access is weakest, tests candidate sites for new facilities, and presents everything in an interactive web dashboard. It is a **planning and analysis aid, not an operational dispatch system.**
 
-Real incident data (optional): data/incidents.csv with columns lat,lon,type,datetime,response_min
-Without it, phase 5 creates a SIMULATED demo set (clearly labelled in the dashboard).
+![Python](https://img.shields.io/badge/Python-3.12-blue) ![Leaflet](https://img.shields.io/badge/Leaflet.js-map-green) ![OSMnx](https://img.shields.io/badge/OSMnx-road%20network-orange) ![Status](https://img.shields.io/badge/status-portfolio%20prototype-lightgrey)
 
-## Dashboard status
+> **Data notice:** incident records in this repository are **simulated demo data**. Accuracy figures that depend on them (for example MAE and R²) describe the demo pipeline only and are **not** evidence of real-world model performance. See [Limitations](#limitations).
 
-The dashboard has separate Overview, Emergency Mapping, Network Analysis,
-Predictive Analytics (Demo), Hotspot Heatmaps, Accessibility, Facility Optimization, Planning
-Recommendations, Priority Zones, Dispatch Center, and Reports & Analytics
-views. Predictive Analytics is explicitly labeled as a demo and Planning
-Recommendations presents access-time bands and candidate planning
-hypotheses, not trained AI outputs or verified sites. It uses generated project outputs for facility counts, road-network
-access estimates, service-area polygons, candidate sites, and incident
-summaries. Network Analysis and Dispatch Center use the existing `/api/dispatch`
-route endpoint; clicking the map selects an origin.
+---
 
-Priority Zones aggregates sampled road-node travel times into 500 m grid cells
-in projected coordinates. Cell colors show mean time to the slower available
-hospital/fire service; hover for each service's mean and the number of sampled
-nodes in that cell. The grid is a visualization of the sampled network, not
-neighborhood boundaries or population-weighted coverage. Its adjacent chart
-uses fixed travel-time bands; the class table remains a relative quartile
-summary.
+## Table of contents
+1. [Project goals](#project-goals)
+2. [Dashboard preview](#dashboard-preview)
+3. [Key results](#key-results)
+4. [Features](#features)
+5. [Methodology](#methodology)
+6. [Technology stack](#technology-stack)
+7. [Project structure](#project-structure)
+8. [Installation and usage](#installation-and-usage)
+9. [Data sources](#data-sources)
+10. [Limitations](#limitations)
+11. [Future work](#future-work)
+12. [Author and acknowledgements](#author-and-acknowledgements)
 
-Reports can download incident and sampled access-point CSV files, export
-facility GeoJSON, and open the browser print dialog for PDF output. Reports &
-Analytics shows fixed travel-time bands and a Data sources and date summary
-with the study-area definition and analysis-environment versions. The road
-graph file timestamp indicates 2026-11-08 (an approximate download date; the
-facility extract has no separate timestamp). Its Limits section also covers
-incident records, population, facility verification, geographic coverage,
-route assumptions, and interpretation of model outputs.
+---
 
-The maps use a taller, responsive viewport-based layout so mapped features and
-routes are easier to inspect. On narrow screens, map sizing adapts to the
-viewport and the dashboard retains its existing single-column layout.
+## Project goals
+- Estimate road-network travel time from every part of the study area to the nearest hospital and fire station.
+- Identify areas with weaker emergency access using transparent, explainable indicators.
+- Test where additional facilities would improve coverage (maximal coverage scenario).
+- Provide a professional, interactive dashboard with maps, charts, routes and downloadable results.
+- Be explicit about data quality and limitations.
 
-The Overview page prioritizes a large dark-basemap map with boundary, named
-hospitals, fire stations, and OpenStreetMap area names enabled by default.
-Area labels are clipped to the study boundary and reveal neighborhood-level
-names as the map is zoomed in; road lines and access samples can be enabled from
-the map's layer panel. Its side panels summarize 10-minute
-road-node coverage, hospital access-time estimates, and the highest-ranked
-sample coordinates. Dispatch Center uses a three-panel scenario layout with
-explicit demo-only severity, route estimates, suggested facilities, and a
-simulated route marker; it does not dispatch real units. The dashboard uses a
-single page scroll, a compact KPI strip, and a collapsible sidebar on small
-screens.
+## Dashboard preview
+The dashboard has 11 pages. Screenshots below are from the running application.
 
-Network Analysis starts with the 10-minute hospital (blue) and fire-station
-(red) service-area polygons, facility markers, and no road lines. The hospital
-service area is shown initially; hospital and fire service areas have separate
-toggles and use light fills to keep overlapping areas and markers legible.
-Clinics can be shown separately, and routes, clinics, and roads can be enabled as needed. Its
-coverage chart describes equal-weight sampled road nodes within the compact
-8 km study boundary; full coverage at a threshold does not imply full-city or
-district coverage and is not population-weighted.
+### Network analysis: closest facility and road routes
+Click anywhere on the map to calculate the nearest hospital and fire station by travel time on the road network. Service-area thresholds (5, 10, 15, 20, 30 minutes) can be switched on.
 
-Area labels come from named OpenStreetMap place points within the study boundary.
-They are community-mapped locality references, not official administrative
-neighborhood boundaries.
+![Network analysis](docs/images/network-analysis.png)
 
-## Map and hospital directory
+### Hotspot heatmaps
+Smooth heat layers for incident density and for hard-to-reach areas.
 
-The interactive map combines OpenStreetMap tiles with the project road-network
-GeoJSON layer, facility markers, and feature popups. The source contains 78
-mapped OSM healthcare/hospital records in the project's 8 km study area;
-unnamed records are excluded from map markers and the searchable directory.
-The current directory displays 72 named hospital records and each record's
-available OSM tags, including address, contact, facility type, services,
-opening hours, and other metadata; untagged details are identified as
-unavailable rather than inferred. The emergency-services source has 8 records,
-including ambulance stations; nearby fire-station search includes only named
-records tagged as fire stations.
+![Hotspot heatmaps](docs/images/hotspot-heatmaps.png)
 
-On Emergency Mapping, the facility-name suggestions search the loaded
-hospital and fire-station lists. Users can opt in to continuous browser
-geolocation, see named nearby facilities sorted by road distance, select a
-specific facility, and request up to three distinct routes ordered by estimated
-free-flow travel time. Route choices show distance, travel-time estimates, and
-directions for the selected path. Alternatives are calculated from the mapped
-drive graph; they do not use live traffic or imply road availability. Location
-access requires user permission and a secure context such as localhost or
-HTTPS. The route and nearby-service endpoints are served by `server.py`;
-restart the existing server process after updating backend code to enable new
-route responses.
+### Dispatch center (demo simulation)
+Choose a scenario, set an origin, and calculate the nearest suggested hospital and fire station with a simulated ETA. This is a routing demonstration only. No unit is dispatched.
 
-Emergency Mapping also provides an optional WorldPop population overlay when
-the population preparation script has been run. To generate it, run
-`python scripts/07_prepare_population.py`. The script retrieves the Pakistan
-2025 constrained 100 m estimate from the WorldPop API, clips it to the existing
-study-area boundary, and writes a GeoTIFF, a Leaflet PNG overlay, and metadata
-to `dashboard/data/`. The selected R2025A v1 release is marked alpha by
-WorldPop; values are modeled estimates, not census observations, and the
-dashboard does not currently use them to calculate population-weighted access.
-Attribution and the dataset citation are saved in
-`dashboard/data/population_metadata.json`.
+![Dispatch center](docs/images/dispatch-center.png)
 
-OpenStreetMap is community maintained and may be incomplete or out of date, so
-this study-area directory is not an authoritative or exhaustive Rawalpindi
-hospital register. Verify contact details with the facility before relying on
-them. Map data and tiles are attributed to OpenStreetMap contributors.
+### Accessibility
+Estimated travel time to the nearest hospital or fire station for sampled road-network nodes, with distribution charts and a threshold coverage chart.
 
-## Data limitations
+![Accessibility map](docs/images/accessibility-map.png)
 
-- Incident data is simulated unless `data/incidents.csv` is supplied. Simulated
-  model metrics are not real-world validation. A project CSV is not considered
-  an official or verified Rescue 1122 incident feed unless its provenance has
-  been independently confirmed.
-- WorldPop R2025A population values are estimates and the release is marked
-  alpha by its publisher. The layer is visualized only; accessibility and
-  service-area statistics remain road-node based, not population weighted.
-- The generated access sample is road-node based, not population weighted.
-- Reported high-threshold coverage is confined to the compact 8 km project
-  boundary; full sampled-node coverage there must not be interpreted as
-  full Rawalpindi city/district coverage.
-- Route estimates near the study-area boundary are less reliable because the
-  road graph is clipped to the project boundary and may omit useful roads or
-  connections beyond it.
-- Accessibility estimates use the available road graph and do not account for
-  live traffic, road closures, or verified dispatch times.
-- Verified official hospital and fire-station registers are not included.
-  Existing facility locations and tags are community-mapped OpenStreetMap
-  records and may be incomplete or out of date.
-- The project does not have an official Rescue 1122 incident feed. Unless an
-  authorized, provenance-documented incident file is supplied, incident
-  records are simulated. No restricted or personally identifiable incident
-  records should be imported into the dashboard.
-- The project facility query covers an 8 km study area around Rawalpindi city
-  centre and is not an exhaustive district-wide inventory.
-- Verified traffic/dispatch data and population-weighted exposure figures are
-  therefore unavailable.
-- Facility optimization uses a 5-minute greedy maximal-coverage scenario over
-  the same 4,000 sampled road nodes and rounded access times used on the
-  Accessibility page. Candidate locations are selected from a
-  seeded random sample of road-graph nodes and are for further assessment, not
-  site recommendations. Results near the study-area edge may reflect boundary
-  clipping because facilities and roads just outside the approximately 8 km
-  study area are not counted. Population weighting and p-median optimization
-  are not implemented; land availability, road access, and site suitability
-  require field verification.
-- Facility search searches loaded OSM facility names; it is not a geocoder.
+### Priority zones (500 m grid)
+Mean slower-service travel time aggregated into 500 m cells, coloured by fixed time bands.
+
+![Priority zones](docs/images/priority-zones.png)
+
+### Facility optimization (5-minute standard)
+Greedy maximal-coverage scenario with candidate locations for further assessment.
+
+![Facility optimization map](docs/images/facility-optimization-map.png)
+
+![Facility optimization results](docs/images/facility-optimization-tables.png)
+
+### Planning recommendations
+Evidence-based next steps, candidate locations and access-time bands.
+
+![Planning recommendations](docs/images/planning-recommendations.png)
+
+### Predictive analytics (demo)
+Incident categories, estimated versus recorded response time, and a weekday-average demand baseline. All values here come from simulated incidents.
+
+![Predictive analytics demo](docs/images/predictive-analytics-demo.png)
+
+### Reports and analytics
+Summary tables, CSV downloads, print-to-PDF, data sources and a full limitations section.
+
+![Reports and analytics](docs/images/reports-analytics.png)
+
+## Key results
+All figures describe the **sampled road-network nodes inside the study area**, not people or households, and use free-flow travel times.
+
+| Measure | Value |
+|---|---|
+| Hospitals (OpenStreetMap) | 78 |
+| Fire stations (OpenStreetMap) | 8 |
+| Mean travel time to nearest hospital | 3.8 min |
+| Road nodes within 10 minutes of a hospital | 97.2% |
+| Road nodes within 5 minutes of a hospital | about 71% |
+| Road nodes within 5 minutes of a fire station | about 48% |
+| Hospital coverage within 5 min, existing, then with 3 candidate sites | 71.4% then 92.2% |
+| Fire station coverage within 5 min, existing, then with 3 candidate sites | 48.0% then 71.5% |
+
+Candidate gains near the edge of the study area may partly reflect boundary clipping, because facilities and roads just outside the area are not counted.
+
+## Features
+- **Overview** with KPI strip, coverage and access-time charts.
+- **Emergency mapping** with facility layers, search, nearby facilities and road directions.
+- **Network analysis** with closest-facility routes and service areas.
+- **Hotspot heatmaps** for incident density and access difficulty.
+- **Accessibility** map, histograms and coverage by threshold.
+- **Facility optimization** using a greedy maximal-coverage model.
+- **Priority zones** on a 500 m grid with fixed time bands.
+- **Planning recommendations** written as planning hypotheses, not instructions.
+- **Dispatch center** simulation with ETA, severity (rule-based demo) and suggested facilities.
+- **Reports and analytics** with CSV export, print/PDF, data sources and limitations.
+- Honest **DEMO labels** wherever simulated data is used.
+
+## Methodology
+1. **Data collection:** hospitals, fire stations and the drivable road network are downloaded from OpenStreetMap using OSMnx for an 8 km study area around Rawalpindi city centre.
+2. **Travel time:** edge speeds come from OSM tags (with a fallback speed), converted to travel time in seconds. A multi-source Dijkstra search on the directed graph gives the time from the nearest facility to every road node.
+3. **Service areas:** nodes reachable within 5, 10, 15, 20 and 30 minutes are buffered and merged into polygons.
+4. **Access classes:** each node is scored by the worse of its hospital and fire-station access time. Relative quartile classes and fixed time bands are both reported.
+5. **Zones:** sampled nodes are aggregated into 500 m grid cells with their mean travel time.
+6. **Facility optimization:** a greedy maximal-coverage algorithm selects up to three candidate nodes per service type that add the most newly covered demand nodes (5-minute standard, equal-weight nodes, seeded random candidate sample).
+7. **Incidents and diagnostics:** if `data/incidents.csv` exists, real records are used; otherwise a clearly labelled simulated set is generated. Response-time diagnostics compare network estimates with recorded times.
+8. **Dashboard:** a local Python server serves the Leaflet and Chart.js dashboard and a route API that returns real road routes.
+
+## Technology stack
+| Layer | Tools |
+|---|---|
+| Data and GIS processing | Python 3.12, OSMnx, NetworkX, GeoPandas, Shapely, pandas, NumPy |
+| Analysis | Dijkstra shortest paths, greedy maximal coverage, quartile and band classification |
+| Server | Python standard library HTTP server with a route API |
+| Frontend | HTML, CSS, JavaScript, Leaflet.js, Chart.js, Leaflet heat layer |
+| Basemap | Esri / OpenStreetMap-based tiles with attribution |
+
+## Project structure
+```
+ERIS_Rawalpindi_Complete/
+├── scripts/
+│   ├── 01_download_data.py        # OSM boundary, facilities, road graph
+│   ├── 02_network_analysis.py     # travel times, KPIs, access classes
+│   ├── 03_service_areas.py        # 5 / 10 / 15 / 20 / 30 minute polygons
+│   ├── 04_location_optimization.py# greedy maximal-coverage scenario
+│   ├── 05_demo_incidents.py       # incidents, stats, demand baseline
+│   ├── 06_export_road_network.py  # road network for the dashboard
+│   ├── 07_prepare_population.py   # optional population overlay
+│   └── common.py                  # shared helpers
+├── dashboard/
+│   ├── index.html
+│   ├── app.js
+│   └── data/                      # GeoJSON and JSON outputs
+├── docs/images/                   # README screenshots
+├── server.py                      # dashboard and route API
+├── run_all.py                     # runs the analysis pipeline
+├── requirements.txt
+└── README.md
+```
+
+## Installation and usage
+**Requirements:** Python 3.10 or newer, an internet connection for the first data download.
+
+```bash
+# 1. Create and activate a virtual environment (Windows)
+python -m venv .venv
+.venv\Scripts\activate
+
+# 2. Install dependencies
+python -m pip install -r requirements.txt
+
+# 3. Run the analysis pipeline (downloads data, can take several minutes)
+python run_all.py
+
+# 4. Start the dashboard and route server
+python server.py
+```
+
+Then open **http://localhost:8000** in your browser.
+
+**Optional real incident data:** place an anonymised file at `data/incidents.csv` with the columns `lat, lon, type, datetime, response_min` and run `python scripts/05_demo_incidents.py`. The dashboard then shows real results and removes the DEMO labels.
+
+## Data sources
+- **OpenStreetMap contributors** for roads, hospitals and fire stations (ODbL licence, https://www.openstreetmap.org/copyright).
+- **WorldPop** population surface, used only as an optional map overlay and **not** in the coverage calculations.
+- **Esri and OpenStreetMap-based tiles** for the basemap, with attribution shown on every map.
+- Incident records are simulated unless you supply your own.
+
+## Limitations
+- **Incident records are simulated.** Error metrics, hotspots and demand baselines based on them are demonstrations only.
+- **No population weighting in coverage.** Percentages describe sampled road nodes, not people or households.
+- **Facilities are community-mapped** in OpenStreetMap and have not been verified against an official hospital or fire-station register. Some healthcare records are treated as clinics and excluded as hospital destinations.
+- **Compact study area.** Results describe about an 8 km area around the city centre. Near-complete coverage here does not mean the whole city or district is covered, and routes near the boundary are less reliable because the road graph is clipped.
+- **Free-flow travel times.** Live traffic, closures, vehicle restrictions, dispatch delays, facility capacity and unit availability are not modelled.
+- **Facility optimization is illustrative.** It uses equal-weight nodes and randomly sampled candidate nodes. Candidates are for further assessment, not site recommendations. P-median optimization is not implemented.
+- **Quartile classes are relative.** About a quarter of nodes always fall in the slowest group, so they are not an absolute risk measure.
+- The dispatch screen is a **simulation**, and its severity score is a simple rule, not clinical triage.
+
+## Future work
+- Replace simulated incidents with anonymised official records (for example Rescue 1122) and validate the response-time estimates.
+- Weight demand by population (WorldPop) so coverage describes people.
+- Verify the facility list against an official register and add capacity and services.
+- Extend the road network beyond the study boundary to remove edge effects.
+- Add p-median and capacitated location models.
+- Add traffic-aware travel times.
+
+## Author and acknowledgements
+Created by **Rameen Naeem** ([@rameennaeemgeo](https://github.com/rameennaeemgeo)), geoinformatics (Remote Sensing and GIS) student, as a portfolio project.
+
+Built with open data and open-source tools: OpenStreetMap, OSMnx, NetworkX, GeoPandas, Leaflet and Chart.js.
