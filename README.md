@@ -1,5 +1,14 @@
 # ERIS: Rawalpindi Emergency Response Intelligence System
 
+## Public Dashboard
+
+[Open the ERIS dashboard](https://rameennaeemgeo.github.io/ERIS_Rawalpindi_Complete/)
+
+The dashboard is hosted on GitHub Pages and can be opened from any device with
+internet access. Map, chart, and analysis views are available; live route,
+nearby-facility, and dispatch API requests require the separate Python server
+and are not available on this static public site.
+
 **A GIS-based emergency access analysis and decision-support dashboard for hospitals and fire stations in Rawalpindi, Pakistan.**
 
 ERIS uses OpenStreetMap road data to estimate how quickly emergency facilities can be reached, shows where access is weakest, tests candidate sites for new facilities, and presents everything in an interactive web dashboard. It is a **planning and analysis aid, not an operational dispatch system.**
