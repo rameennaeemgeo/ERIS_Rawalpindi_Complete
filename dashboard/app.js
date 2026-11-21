@@ -1,3 +1,171 @@
+/* ERIS routing for the public GitHub Pages site.
+ * The local Python server (server.py) is not available on GitHub Pages, so this file answers the
+ * dashboard's /api/dispatch, /api/nearby and /api/route requests in the browser, using the public
+ * OSRM demo server (https://project-osrm.org, data (c) OpenStreetMap contributors).
+ * On localhost it does nothing, so server.py keeps working exactly as before. */
+(function () {
+  'use strict';
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '') return;
+
+  const OSRM = 'https://router.project-osrm.org';
+  const realFetch = window.fetch.bind(window);
+  const MAX_CANDIDATES = 60;     // nearest facilities (straight line) sent to the OSRM table service
+  const NEARBY_COUNT = 3;        // facilities returned per type
+
+  const nameOf = p => {
+    const n = p.name || p['name:en'] || p['name:ur'];
+    return typeof n === 'string' && n.trim() && n.trim().toLowerCase() !== 'unnamed' ? n.trim() : '';
+  };
+  const isEmergencyHospital = p => {
+    const name = nameOf(p);
+    const tag = String(p.emergency || '').trim().toLowerCase();
+    const hasService = tag && !['no', 'false', '0', 'none', 'unknown'].includes(tag);
+    return Boolean(name && !['no', 'false', '0', 'none'].includes(tag) && (/hospital/i.test(name) || hasService));
+  };
+  const records = (geo, kind) => ((geo && geo.features) || []).map((f, index) => {
+    const p = f.properties || {};
+    return { index, kind, name: nameOf(p), props: p, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] };
+  });
+
+  let catalogPromise = null;
+  const catalog = () => catalogPromise || (catalogPromise = Promise.all([
+    realFetch('data/hospitals.geojson').then(r => r.json()),
+    realFetch('data/fire_stations.geojson').then(r => r.json())
+  ]).then(([h, f]) => ({ hospital: records(h, 'hospital'), fire: records(f, 'fire') })));
+
+  const eligible = (kind, rec) => rec.name && (kind === 'hospital' ? isEmergencyHospital(rec.props) : rec.props.amenity === 'fire_station');
+
+  const straightKm = (a, b) => {
+    const r = x => x * Math.PI / 180, dLat = r(b.lat - a.lat), dLon = r(b.lon - a.lon);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLon / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  };
+  const pt = p => `${p.lon.toFixed(6)},${p.lat.toFixed(6)}`;
+
+  async function osrm(path) {
+    const response = await realFetch(OSRM + path);
+    if (!response.ok) throw new Error(`Routing service returned HTTP ${response.status}`);
+    const json = await response.json();
+    if (json.code && json.code !== 'Ok') throw new Error(json.message || json.code);
+    return json;
+  }
+
+  // Road distance and time from the origin to the nearest candidates of one facility type.
+  async function rank(origin, list) {
+    const near = list.map(rec => ({ rec, km: straightKm(origin, rec) }))
+      .sort((a, b) => a.km - b.km).slice(0, MAX_CANDIDATES).map(x => x.rec);
+    if (!near.length) return [];
+    const coords = [pt(origin), ...near.map(pt)].join(';');
+    const table = await osrm(`/table/v1/driving/${coords}?sources=0&annotations=duration,distance`);
+    const durations = table.durations[0].slice(1);
+    const distances = (table.distances && table.distances[0] ? table.distances[0].slice(1) : durations);
+    return near.map((rec, i) => ({ rec, seconds: durations[i], meters: distances[i] }))
+      .filter(x => Number.isFinite(x.seconds) && Number.isFinite(x.meters));
+  }
+
+  const km = m => (m / 1000).toFixed(2);
+  const mins = s => (s / 60).toFixed(1);
+  const turnWord = mod => ({
+    'slight right': 'Bear right onto', 'right': 'Turn right onto', 'sharp right': 'Turn sharp right onto',
+    'slight left': 'Bear left onto', 'left': 'Turn left onto', 'sharp left': 'Turn sharp left onto',
+    'uturn': 'Make a U-turn onto'
+  })[mod] || 'Continue on';
+
+  function directionsFrom(route, facility) {
+    const steps = (route.legs || []).flatMap(leg => leg.steps || []);
+    const out = ['Start from your current location and follow the mapped road network.'];
+    steps.forEach((step, i) => {
+      const m = step.maneuver || {};
+      if (m.type === 'arrive') return;
+      const road = step.name || step.ref || 'unnamed road';
+      let lead;
+      if (m.type === 'depart' || i === 0) lead = 'Start on';
+      else if (m.type === 'roundabout' || m.type === 'rotary' || m.type === 'roundabout turn')
+        lead = `At the roundabout${m.exit ? `, take exit ${m.exit}` : ''} onto`;
+      else if (['turn', 'end of road', 'fork', 'on ramp', 'off ramp', 'merge'].includes(m.type)) lead = turnWord(m.modifier);
+      else if (m.modifier && m.modifier !== 'straight' && m.type === 'new name') lead = turnWord(m.modifier);
+      else lead = 'Continue on';
+      out.push(`${lead} ${road} for ${km(step.distance)} km (about ${mins(step.duration)} min)`);
+    });
+    out.push(`Arrive at ${facility.name}.`);
+    return out;
+  }
+
+  const toRoute = (route, origin, facility, number) => {
+    const line = [[origin.lat, origin.lon], ...route.geometry.coordinates.map(([x, y]) => [y, x]), [facility.lat, facility.lon]];
+    return {
+      minutes: Number(mins(route.duration)), distance_km: Number(km(route.distance)),
+      directions: directionsFrom(route, facility), facility: facility.name,
+      facility_ll: [facility.lat, facility.lon], line, index: facility.index, route_number: number
+    };
+  };
+
+  async function routes(origin, facility, alternatives) {
+    const json = await osrm(`/route/v1/driving/${pt(origin)};${pt(facility)}?overview=full&geometries=geojson&steps=true&alternatives=${alternatives ? 3 : 'false'}`);
+    return json.routes.map((r, i) => toRoute(r, origin, facility, i + 1));
+  }
+
+  async function handle(kind, q) {
+    const lat = parseFloat(q.get('lat')), lon = parseFloat(q.get('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180)
+      return json({ error: 'Coordinates are outside valid latitude/longitude ranges.' }, 400);
+    const origin = { lat, lon };
+    const data = await catalog();
+
+    if (kind === 'route') {
+      const type = q.get('type'), index = parseInt(q.get('index'), 10);
+      const facility = (data[type] || [])[index];
+      if (!facility || !facility.name) return json({ error: 'Selected facility is not in the loaded dataset.' }, 400);
+      const list = await routes(origin, facility, true);
+      if (!list.length) return json({ error: 'No road route is available for this facility.' }, 404);
+      return json({ ...list[0], alternatives: list });
+    }
+
+    const ranked = {};
+    await Promise.all(['hospital', 'fire'].map(async type => {
+      ranked[type] = (await rank(origin, data[type].filter(rec => eligible(type, rec))))
+        .sort((a, b) => kind === 'nearby' ? a.meters - b.meters : a.seconds - b.seconds);
+    }));
+
+    if (kind === 'nearby') {
+      const result = { hospital: [], fire: [] };
+      await Promise.all(['hospital', 'fire'].map(async type => {
+        const top = ranked[type].slice(0, NEARBY_COUNT);
+        const lists = await Promise.all(top.map(x => routes(origin, x.rec, false)));
+        result[type] = lists.map(l => l[0]).filter(Boolean);
+      }));
+      return json(result);
+    }
+
+    // dispatch: nearest hospital and fire station by travel time
+    const result = { hospital: null, fire: null };
+    await Promise.all(['hospital', 'fire'].map(async type => {
+      const best = ranked[type][0];
+      if (best) result[type] = (await routes(origin, best.rec, false))[0] || null;
+    }));
+    return json(result);
+  }
+
+  const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
+    status, headers: { 'Content-Type': 'application/json' }
+  });
+
+  window.fetch = function (input, init) {
+    try {
+      const raw = typeof input === 'string' ? input : input.url;
+      const url = new URL(raw, window.location.href);
+      const match = url.pathname.match(/\/api\/(dispatch|nearby|route)$/);
+      if (match) {
+        return handle(match[1], url.searchParams).catch(error => json({ error: String(error.message || error) }, 502));
+      }
+    } catch (error) { /* fall through to the normal fetch */ }
+    return realFetch(input, init);
+  };
+})();
+
+
+/* ===== ERIS dashboard application ===== */
 (() => {
   const pages = [
     'Overview',
